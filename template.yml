@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Chat Page
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: 'Serverless Chat Page'
+  ChatWebSocketApiName:
+    Type: String
+    Default: 'ChatWebSocket'
+  ChatFrontApiName:
+    Type: String
+    Default: 'ChatFront'
+  ChatOnConnectFunctionName:
+    Type: String
+    Default: 'ChatOnConnectFunction'
+  ChatOnDisconnectFunctionName:
+    Type: String
+    Default: 'ChatOnDisconnectFunction'
+  ChatOnSendFunctionName:
+    Type: String
+    Default: 'ChatOnSendFunction'
+  ChatCronFunctionName:
+    Type: String
+    Default: 'ChatCronFunction'
+  ChatFrontFunctionName:
+    Type: String
+    Default: 'ChatFrontFunction'
+  ConnectionTableName:
+    Type: String
+    Default: 'chat_connection'
+  MessageTableName:
+    Type: String
+    Default: 'chat_message'
+  LimitConnectionCount:
+    Type: String
+    Default: '10'
+  LimitMessageCount:
+    Type: String
+    Default: '100'
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: Serverless-Application-Simple-Chat
+    Description: 'Serverless Application Simple Chat'
+    Author: tanaka-takurou
+    SpdxLicenseId: MIT
+    LicenseUrl: LICENSE.txt
+    ReadmeUrl: README.md
+    Labels: ['ServerlessRepo']
+    HomePageUrl: https://github.com/tanaka-takurou/serverless-application-chat-page-go/
+    SemanticVersion: 0.0.1
+    SourceCodeUrl: https://github.com/tanaka-takurou/serverless-application-chat-page-go/
+
+Resources:
+  ServerlessChatWebSocket:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Ref ChatWebSocketApiName
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      RouteKey: $connect
+      AuthorizationType: NONE
+      OperationName: ConnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref ConnectInteg
+  ConnectInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      Description: Connect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnConnectFunction.Arn}/invocations
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      OperationName: DisconnectRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref DisconnectInteg
+  DisconnectInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      Description: Disconnect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnDisconnectFunction.Arn}/invocations
+  SendRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      RouteKey: send
+      AuthorizationType: NONE
+      OperationName: SendRoute
+      Target: !Join
+        - '/'
+        - - 'integrations'
+          - !Ref SendInteg
+  SendInteg:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+      Description: Send Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Sub:
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnSendFunction.Arn}/invocations
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+    - ConnectRoute
+    - SendRoute
+    - DisconnectRoute
+    Properties:
+      ApiId: !Ref ServerlessChatWebSocket
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Prod
+      Description: Prod Stage
+      DeploymentId: !Ref Deployment
+      ApiId: !Ref ServerlessChatWebSocket
+  ConnectionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: "connectionId"
+        AttributeType: "S"
+      KeySchema:
+      - AttributeName: "connectionId"
+        KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      SSESpecification:
+        SSEEnabled: True
+      TableName: !Ref ConnectionTableName
+  MessageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: "id"
+        AttributeType: "N"
+      KeySchema:
+      - AttributeName: "id"
+        KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      SSESpecification:
+        SSEEnabled: True
+      TableName: !Ref MessageTableName
+  ImgBucket:
+    Type: AWS::S3::Bucket
+  OnConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ChatOnConnectFunctionName
+      CodeUri: api/connect/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'Chat OnConnect Function'
+      Environment:
+        Variables:
+          CONNECTION_TABLE_NAME: !Ref ConnectionTableName
+          LIMIT_MESSAGE_COUNT: !Ref LimitMessageCount
+          LIMIT_CONNECTION_COUNT: !Ref LimitConnectionCount
+          REGION: !Ref 'AWS::Region'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref ConnectionTableName
+  OnConnectPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - ServerlessChatWebSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OnConnectFunction
+      Principal: apigateway.amazonaws.com
+  OnDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ChatOnDisconnectFunctionName
+      CodeUri: api/disconnect/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'Chat OnDisconnect Function'
+      Environment:
+        Variables:
+          CONNECTION_TABLE_NAME: !Ref ConnectionTableName
+          REGION: !Ref 'AWS::Region'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref ConnectionTableName
+  OnDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - ServerlessChatWebSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OnDisconnectFunction
+      Principal: apigateway.amazonaws.com
+  OnSendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ChatOnSendFunctionName
+      CodeUri: api/send/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'Chat OnSendFunction Function'
+      Environment:
+        Variables:
+          CONNECTION_TABLE_NAME: !Ref ConnectionTableName
+          MESSAGE_TABLE_NAME: !Ref MessageTableName
+          BUCKET_NAME: !Ref ImgBucket
+          LIMIT_MESSAGE_COUNT: !Ref LimitMessageCount
+          LIMIT_CONNECTION_COUNT: !Ref LimitConnectionCount
+          REGION: !Ref 'AWS::Region'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref ConnectionTableName
+      - DynamoDBCrudPolicy:
+          TableName: !Ref MessageTableName
+      - S3CrudPolicy:
+          BucketName: !Ref ImgBucket
+      - Statement:
+        - Effect: Allow
+          Action:
+          - 'execute-api:ManageConnections'
+          Resource:
+          - !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ServerlessChatWebSocket}/*'
+  SendMessagePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - ServerlessChatWebSocket
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref OnSendFunction
+      Principal: apigateway.amazonaws.com
+  ServerlessChatFrontPage:
+    Type: AWS::Serverless::HttpApi
+  FrontPageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ChatFrontFunctionName
+      CodeUri: bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'Chat Front Function'
+      Events:
+        testapi:
+          Type: HttpApi
+          Properties:
+            Path: '/'
+            Method: get
+            ApiId: !Ref ServerlessChatFrontPage
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref ImgBucket
+          MESSAGE_TABLE_NAME: !Ref MessageTableName
+          LIMIT_MESSAGE_COUNT: !Ref LimitMessageCount
+          WEBSOCKET_URL: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/Prod'] ]
+          REGION: !Ref 'AWS::Region'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref MessageTableName
+  ChatApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref FrontPageFunction
+      Principal: apigateway.amazonaws.com
+  CronFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref ChatCronFunctionName
+      CodeUri: api/cron/bin/
+      Handler: main
+      MemorySize: 256
+      Runtime: go1.x
+      Description: 'Chat Cron Function'
+      Environment:
+        Variables:
+          CONNECTION_TABLE_NAME: !Ref ConnectionTableName
+          REGION: !Ref 'AWS::Region'
+          STACK_NAME: !Ref 'AWS::StackName'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: !Ref ConnectionTableName
+  ScheduledRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ScheduledRule
+      ScheduleExpression: 'rate(24 hours)'
+      State: 'ENABLED'
+      Targets:
+        - Arn: !GetAtt CronFunction.Arn
+          Id: TargetCronFunction
+  CronFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CronFunction
+      Action: lambda:InvokeFunction
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt ScheduledRule.Arn
+
+Outputs:
+  WebSocketURI:
+    Description: "The WSS Protocol URI to connect to"
+    Value: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/Prod'] ]
+
+  FrontPageURI:
+    Description: "The Front Page URI to connect to"
+    Value: !Join [ '', [ 'https://', !Ref ServerlessChatFrontPage, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/'] ]

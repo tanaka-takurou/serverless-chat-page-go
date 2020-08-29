@@ -1,0 +1,76 @@
+{{define "base"}}
+<!doctype html>
+<html>
+  <head>
+{{template "headtag" .}}
+  </head>
+  <body>
+    <div class="ui container">
+      <h1 class="ui center aligned header">Simple Chat</h1>
+      <div class="main ui middle aligned center">
+        <div class="ui column container">
+          <div id="chat_container" class="ui segment">
+            <div class="ui segment">
+              <div id="chat_messages" class="ui list">
+              {{ range .LogList }}
+                <div class="item">
+                  <i class="large user middle aligned icon" style="color: #{{ .Color }}"></i>
+                  <div class="content">
+                  {{ $length := len .ImageUrl }}
+                  {{ if gt $length 0 }}
+                    <img src="{{ .ImageUrl }}">
+                  {{ else }}
+                    {{ .Text }}
+                  {{ end }}
+                  </div>
+                </div>
+              {{ end }}
+              </div>
+            </div>
+            <div id="chat_send" class="ui">
+              <div id="chat_form" class="ui form content">
+                <div class="ui input">
+                  <input id="chat_send_message" type="text" name="text">
+                </div>
+                <div id="img_send_btn" class="ui green button" onclick="OpenModal();">
+                  <i class="large file image middle aligned icon button"></i>
+                </div>
+                <div id="chat_send_btn" class="ui teal button" onclick="OnClickSend();">
+                  <i class="large paper plane middle aligned icon button"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ui dimmer modals page transition hidden">
+      <div class="ui large modal transition hidden">
+        <form class="ui large modal" method="POST" style="left: auto !important;">
+          <div class="header">
+            New Image
+          </div>
+          <div class="content">
+            <div class="ui form">
+              <div class="field">
+                <img id="preview" src>
+              </div>
+              <div class="field">
+                <label>Image File</label>
+                <div class="ui input">
+                  <input id="image" type="file" name="image" accept="image/*" onchange="ChangeImage();">
+                </div>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" name="action" value="createimg">
+          <div class="actions">
+            <div class="ui button" onclick="CloseModal();">Cancel</div>
+            <div class="ui green button" onclick="UploadImage(this);">Submit</div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+{{end}}
