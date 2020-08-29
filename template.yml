@@ -49,9 +49,9 @@ Metadata:
     LicenseUrl: LICENSE.txt
     ReadmeUrl: README.md
     Labels: ['ServerlessRepo']
-    HomePageUrl: https://github.com/tanaka-takurou/serverless-application-chat-page-go/
+    HomePageUrl: https://github.com/tanaka-takurou/serverless-chat-page-go/
     SemanticVersion: 0.0.1
-    SourceCodeUrl: https://github.com/tanaka-takurou/serverless-application-chat-page-go/
+    SourceCodeUrl: https://github.com/tanaka-takurou/serverless-chat-page-go/
 
 Resources:
   ServerlessChatWebSocket:
