@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
 )
 
@@ -94,27 +93,19 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (Respo
 	return res, nil
 }
 
-func scan(ctx context.Context, tableName string, filt expression.ConditionBuilder)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
 	if dynamodbClient == nil {
 		dynamodbClient = dynamodb.New(cfg)
 	}
-	expr, err := expression.NewBuilder().WithFilter(filt).Build()
-	if err != nil {
-		return nil, err
-	}
 	params := &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		ProjectionExpression:      expr.Projection(),
-		TableName:                 aws.String(tableName),
+		TableName: aws.String(tableName),
 	}
 	req := dynamodbClient.ScanRequest(params)
 	return req.Send(ctx)
 }
 
 func sacnMessageList(ctx context.Context)([]MessageData, error)  {
-	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"), expression.NotEqual(expression.Name("status"), expression.Value(-1)))
+	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"))
 	if err != nil {
 		log.Print(err)
 		return nil, err

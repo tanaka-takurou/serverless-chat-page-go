@@ -23,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
@@ -83,20 +82,12 @@ func HandleRequest(ctx context.Context, request events.APIGatewayWebsocketProxyR
 	}, nil
 }
 
-func scan(ctx context.Context, tableName string, filt expression.ConditionBuilder)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
 	if dynamodbClient == nil {
 		dynamodbClient = dynamodb.New(cfg)
 	}
-	expr, err := expression.NewBuilder().WithFilter(filt).Build()
-	if err != nil {
-		return nil, err
-	}
 	params := &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		ProjectionExpression:      expr.Projection(),
-		TableName:                 aws.String(tableName),
+		TableName: aws.String(tableName),
 	}
 	req := dynamodbClient.ScanRequest(params)
 	return req.Send(ctx)
@@ -169,7 +160,7 @@ func delete(ctx context.Context, tableName string, key map[string]dynamodb.Attri
 }
 
 func getMessageCount(ctx context.Context)(*int64, error) {
-	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"), expression.NotEqual(expression.Name("status"), expression.Value(-1)))
+	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"))
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +169,7 @@ func getMessageCount(ctx context.Context)(*int64, error) {
 
 func getOldestMessage(ctx context.Context)(MessageData, error) {
 	var messageData MessageData
-	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"), expression.NotEqual(expression.Name("id"), expression.Value(-1)))
+	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"))
 	if err != nil {
 		log.Println(err)
 		return messageData, err
@@ -274,16 +265,22 @@ func saveMessage(ctx context.Context, connectionId string, message string, color
 }
 
 func getColorFromConnectionID(ctx context.Context, connectionId string)( string, error) {
-	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"), expression.Name("connectionId").Equal(expression.Value(connectionId)))
+	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"))
 	if err != nil {
 		return "", err
 	}
-	item := Connection{}
-	err = dynamodbattribute.UnmarshalMap(result.ScanOutput.Items[0], &item)
-	if err != nil {
-		return "", err
+	color := ""
+	for _, i := range result.ScanOutput.Items {
+		item := Connection{}
+		err = dynamodbattribute.UnmarshalMap(i, &item)
+		if err != nil {
+			log.Println(err)
+		} else if item.ConnectionId == connectionId {
+			color = item.Color
+			break
+		}
 	}
-	return item.Color, nil
+	return color, nil
 }
 
 func deleteConnection(ctx context.Context, connectionId string) error {
@@ -347,7 +344,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 			}
 
 			var endpoint url.URL
-			endpoint.Path = request.RequestContext.Stage
+			// endpoint.Path = request.RequestContext.Stage
 			endpoint.Host = request.RequestContext.DomainName
 			endpoint.Scheme = "https"
 			return aws.Endpoint{
@@ -388,7 +385,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 		log.Print(err)
 		return err
 	}
-	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"), expression.NotEqual(expression.Name("status"), expression.Value(-1)))
+	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"))
 	if err != nil {
 		log.Print(err)
 		return err
@@ -421,6 +418,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 			})
 			_, err := connectionRequest.Send(ctx)
 			if err != nil {
+				log.Println(err)
 				lostConnectionIdList = append(lostConnectionIdList, connectionId)
 			}
 		}

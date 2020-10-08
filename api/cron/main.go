@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/external"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
 )
 
@@ -42,20 +41,12 @@ func HandleRequest(ctx context.Context, event events.CloudWatchEvent) error {
 	return nil
 }
 
-func scan(ctx context.Context, tableName string, filt expression.ConditionBuilder)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
 	if dynamodbClient == nil {
 		dynamodbClient = dynamodb.New(cfg)
 	}
-	expr, err := expression.NewBuilder().WithFilter(filt).Build()
-	if err != nil {
-		return nil, err
-	}
 	params := &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		ProjectionExpression:      expr.Projection(),
-		TableName:                 aws.String(tableName),
+		TableName: aws.String(tableName),
 	}
 	req := dynamodbClient.ScanRequest(params)
 	return req.Send(ctx)
@@ -79,7 +70,7 @@ func checkConnections(ctx context.Context) error {
 	t := time.Now()
 	t_, _ := strconv.Atoi(strings.Replace(t.Format(layout), ".", "", 1))
 	old := t_ - 60*60*2
-	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"), expression.NotEqual(expression.Name("created"), expression.Value(-1)))
+	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"))
 	if err != nil {
 		log.Print(err)
 		return err
