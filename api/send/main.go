@@ -344,7 +344,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 			}
 
 			var endpoint url.URL
-			// endpoint.Path = request.RequestContext.Stage
+			endpoint.Path = request.RequestContext.Stage
 			endpoint.Host = request.RequestContext.DomainName
 			endpoint.Scheme = "https"
 			return aws.Endpoint{
