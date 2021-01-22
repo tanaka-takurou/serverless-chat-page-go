@@ -20,19 +20,21 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/s3manager"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 )
 
 type MessageData struct {
-	Id           int    `json:"id"`
-	Data         string `json:"data"`
-	Created      int    `json:"created"`
-	Color        string `json:"color"`
+	Id           int    `dynamodbav:"id"`
+	Data         string `dynamodbav:"data"`
+	Created      int    `dynamodbav:"created"`
+	Color        string `dynamodbav:"color"`
 }
 
 type ErrorResponse struct {
@@ -40,9 +42,9 @@ type ErrorResponse struct {
 }
 
 type Connection struct {
-	ConnectionId string `json:"connectionId"`
-	Created      int    `json:"created"`
-	Color        string `json:"color"`
+	ConnectionId string `dynamodbav:"connectionId"`
+	Created      int    `dynamodbav:"created"`
+	Color        string `dynamodbav:"color"`
 }
 
 type PostData struct {
@@ -65,6 +67,7 @@ const layout string = "20060102150405.000"
 
 func HandleRequest(ctx context.Context, request events.APIGatewayWebsocketProxyRequest) (Response, error) {
 	var err error
+	initConfig(ctx)
 	err = sendMessage(ctx, request)
 	log.Print(request.RequestContext.Identity.SourceIP)
 	if err != nil {
@@ -82,27 +85,25 @@ func HandleRequest(ctx context.Context, request events.APIGatewayWebsocketProxyR
 	}, nil
 }
 
-func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanOutput, error)  {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(cfg)
 	}
 	params := &dynamodb.ScanInput{
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.ScanRequest(params)
-	return req.Send(ctx)
+	return dynamodbClient.Scan(ctx, params)
 }
 
-func put(ctx context.Context, tableName string, av map[string]dynamodb.AttributeValue) error {
+func put(ctx context.Context, tableName string, av map[string]dynamodbtypes.AttributeValue) error {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(cfg)
 	}
 	input := &dynamodb.PutItemInput{
 		Item:      av,
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.PutItemRequest(input)
-	_, err := req.Send(ctx)
+	_, err := dynamodbClient.PutItem(ctx, input)
 	if err != nil {
 		log.Print(err)
 		return err
@@ -110,9 +111,9 @@ func put(ctx context.Context, tableName string, av map[string]dynamodb.Attribute
 	return nil
 }
 
-func get(ctx context.Context, tableName string, key map[string]dynamodb.AttributeValue, att string)(*dynamodb.GetItemResponse, error) {
+func get(ctx context.Context, tableName string, key map[string]dynamodbtypes.AttributeValue, att string)(*dynamodb.GetItemOutput, error) {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(cfg)
 	}
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
@@ -121,50 +122,47 @@ func get(ctx context.Context, tableName string, key map[string]dynamodb.Attribut
 			att,
 		},
 		ConsistentRead: aws.Bool(true),
-		ReturnConsumedCapacity: dynamodb.ReturnConsumedCapacityNone,
+		ReturnConsumedCapacity: dynamodbtypes.ReturnConsumedCapacityNone,
 	}
-	req := dynamodbClient.GetItemRequest(input)
-	return req.Send(ctx)
+	return dynamodbClient.GetItem(ctx, input)
 }
 
-func update(ctx context.Context, tableName string, an map[string]string, av map[string]dynamodb.AttributeValue, key map[string]dynamodb.AttributeValue, updateExpression string) error {
+func update(ctx context.Context, tableName string, an map[string]string, av map[string]dynamodbtypes.AttributeValue, key map[string]dynamodbtypes.AttributeValue, updateExpression string) error {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(cfg)
 	}
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: an,
 		ExpressionAttributeValues: av,
 		TableName: aws.String(tableName),
 		Key: key,
-		ReturnValues:     dynamodb.ReturnValueUpdatedNew,
+		ReturnValues:     dynamodbtypes.ReturnValueUpdatedNew,
 		UpdateExpression: aws.String(updateExpression),
 	}
 
-	req := dynamodbClient.UpdateItemRequest(input)
-	_, err := req.Send(ctx)
+	_, err := dynamodbClient.UpdateItem(ctx, input)
 	return err
 }
 
-func delete(ctx context.Context, tableName string, key map[string]dynamodb.AttributeValue) error {
+func delete(ctx context.Context, tableName string, key map[string]dynamodbtypes.AttributeValue) error {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(cfg)
 	}
 	input := &dynamodb.DeleteItemInput{
 		TableName: aws.String(tableName),
 		Key: key,
 	}
 
-	req := dynamodbClient.DeleteItemRequest(input)
-	_, err := req.Send(ctx)
+	_, err := dynamodbClient.DeleteItem(ctx, input)
 	return err
 }
 
-func getMessageCount(ctx context.Context)(*int64, error) {
+func getMessageCount(ctx context.Context)(int32, error) {
 	result, err := scan(ctx, os.Getenv("MESSAGE_TABLE_NAME"))
 	if err != nil {
-		return nil, err
+		return int32(0), err
 	}
-	return result.ScanOutput.ScannedCount, nil
+	return result.ScannedCount, nil
 }
 
 func getOldestMessage(ctx context.Context)(MessageData, error) {
@@ -174,9 +172,9 @@ func getOldestMessage(ctx context.Context)(MessageData, error) {
 		log.Println(err)
 		return messageData, err
 	}
-	for _, i := range result.ScanOutput.Items {
+	for _, i := range result.Items {
 		item := MessageData{}
-		err = dynamodbattribute.UnmarshalMap(i, &item)
+		err = attributevalue.UnmarshalMap(i, &item)
 		if err != nil {
 			log.Println(err)
 		} else if messageData.Created < 1 || messageData.Created > item.Created {
@@ -195,7 +193,7 @@ func putMessage(ctx context.Context, connectionId string, message string, color 
 		Created: t_,
 		Color: color,
 	}
-	av, err := dynamodbattribute.MarshalMap(item)
+	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
 		log.Print(err)
 		return err
@@ -220,24 +218,29 @@ func updateMessage(ctx context.Context, connectionId string, message string, col
 		"#i": "connectionId",
 		"#l": "color",
 	}
-	av := map[string]dynamodb.AttributeValue{
-		":newData": {
-			S: aws.String(message),
-		},
-		":newCreated": {
-			N: aws.String(strings.Replace(t.Format(layout), ".", "", 1)),
-		},
-		":newConnectionId": {
-			S: aws.String(connectionId),
-		},
-		":newColor": {
-			S: aws.String(color),
-		},
+	created, err := strconv.Atoi(strings.Replace(t.Format(layout), ".", "", 1))
+	if err != nil {
+		return err
 	}
-	key := map[string]dynamodb.AttributeValue{
-		"id": {
-			N: aws.String(strconv.Itoa(oldestMessage.Id)),
-		},
+	item := struct {
+		NewData         string `dynamodbav:":newData"`
+		NewCreated      int    `dynamodbav:":newCreated"`
+		NewConnectionId string `dynamodbav:":newConnectionId"`
+		NewColor        string `dynamodbav:":newColor"`
+	}{
+		NewData:         message,
+		NewCreated:      created,
+		NewConnectionId: connectionId,
+		NewColor:        color,
+	}
+	av, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return err
+	}
+	item_ := struct {Id int `dynamodbav:"id"`}{oldestMessage.Id}
+	key, err := attributevalue.MarshalMap(item_)
+	if err != nil {
+		return err
 	}
 	updateExpression := "set #d = :newData, #c = :newCreated, #i = :newConnectionId, #l = :newColor"
 	err = update(ctx, os.Getenv("MESSAGE_TABLE_NAME"), an, av, key, updateExpression)
@@ -253,8 +256,8 @@ func saveMessage(ctx context.Context, connectionId string, message string, color
 		return err
 	}
 	limitCount, _ := strconv.Atoi(os.Getenv("LIMIT_MESSAGE_COUNT"))
-	if int(*messageCount) < limitCount {
-		putMessage(ctx, connectionId, message, color, int(*messageCount))
+	if int(messageCount) < limitCount {
+		putMessage(ctx, connectionId, message, color, int(messageCount))
 	} else {
 		updateMessage(ctx, connectionId, message, color)
 	}
@@ -270,9 +273,9 @@ func getColorFromConnectionID(ctx context.Context, connectionId string)( string,
 		return "", err
 	}
 	color := ""
-	for _, i := range result.ScanOutput.Items {
+	for _, i := range result.Items {
 		item := Connection{}
-		err = dynamodbattribute.UnmarshalMap(i, &item)
+		err = attributevalue.UnmarshalMap(i, &item)
 		if err != nil {
 			log.Println(err)
 		} else if item.ConnectionId == connectionId {
@@ -284,19 +287,19 @@ func getColorFromConnectionID(ctx context.Context, connectionId string)( string,
 }
 
 func deleteConnection(ctx context.Context, connectionId string) error {
-	key := map[string]dynamodb.AttributeValue{
-		"connectionId": {
-			S: aws.String(connectionId),
-		},
+	item := struct {ConnectionId string `dynamodbav:"connectionId"`}{connectionId}
+	key, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return err
 	}
-	err := delete(ctx, os.Getenv("CONNECTION_TABLE_NAME"), key)
+	err = delete(ctx, os.Getenv("CONNECTION_TABLE_NAME"), key)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func uploadImage(filename string, filedata string)(string, error) {
+func uploadImage(ctx context.Context, filename string, filedata string)(string, error) {
 	t := time.Now()
 	b64data := filedata[strings.IndexByte(filedata, ',')+1:]
 	data, err := base64.StdEncoding.DecodeString(b64data)
@@ -320,9 +323,9 @@ func uploadImage(filename string, filedata string)(string, error) {
 		return "", errors.New("this extension is invalid")
 	}
 	filename_ := string([]rune(filename)[:(len(filename) - len(extension))]) + strings.Replace(t.Format(layout), ".", "", 1) + extension
-	uploader := s3manager.NewUploader(cfg)
-	_, err = uploader.Upload(&s3manager.UploadInput{
-		ACL: s3.ObjectCannedACLPublicRead,
+	uploader := s3manager.NewUploader(s3.NewFromConfig(cfg))
+	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
+		ACL: s3types.ObjectCannedACLPublicRead,
 		Bucket: aws.String(os.Getenv("BUCKET_NAME")),
 		Key: aws.String(filename_),
 		Body: bytes.NewReader(data),
@@ -339,10 +342,6 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 	if apigatewayClient == nil {
 		cp := cfg.Copy()
 		cp.EndpointResolver = aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-			if service != "execute-api" {
-				return cfg.EndpointResolver.ResolveEndpoint(service, region)
-			}
-
 			var endpoint url.URL
 			endpoint.Path = request.RequestContext.Stage
 			endpoint.Host = request.RequestContext.DomainName
@@ -352,7 +351,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 				URL:           endpoint.String(),
 			}, nil
 		})
-		apigatewayClient = apigatewaymanagementapi.New(cp)
+		apigatewayClient = apigatewaymanagementapi.NewFromConfig(cp)
 	}
 	var d PostData
 	var err error
@@ -365,7 +364,7 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 	var message string
 	isText := true
 	if len(d.Image) > 0 {
-		message, err = uploadImage(d.Text, d.Image)
+		message, err = uploadImage(ctx, d.Text, d.Image)
 		isText = false
 		if err != nil {
 			log.Print(err)
@@ -402,9 +401,9 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 		return err
 	}
 	// Post to ConnectionRequest
-	for _, i := range result.ScanOutput.Items {
+	for _, i := range result.Items {
 		item := Connection{}
-		err = dynamodbattribute.UnmarshalMap(i, &item)
+		err = attributevalue.UnmarshalMap(i, &item)
 		if err != nil {
 			log.Println(err)
 		} else {
@@ -412,11 +411,10 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 				continue
 			}
 			connectionId := item.ConnectionId
-			connectionRequest := apigatewayClient.PostToConnectionRequest(&apigatewaymanagementapi.PostToConnectionInput{
+			_, err := apigatewayClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
 				Data:         jsonBytes,
 				ConnectionId: &connectionId,
 			})
-			_, err := connectionRequest.Send(ctx)
 			if err != nil {
 				log.Println(err)
 				lostConnectionIdList = append(lostConnectionIdList, connectionId)
@@ -430,10 +428,9 @@ func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyReq
 	return nil
 }
 
-func init() {
+func initConfig(ctx context.Context) {
 	var err error
-	cfg, err = external.LoadDefaultAWSConfig()
-	cfg.Region = os.Getenv("REGION")
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("REGION")))
 	if err != nil {
 		log.Print(err)
 	}

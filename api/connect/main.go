@@ -15,10 +15,11 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 )
 
 type MessageResponse struct {
@@ -26,10 +27,10 @@ type MessageResponse struct {
 }
 
 type MessageData struct {
-	Id      int    `json:"id"`
-	Data    string `json:"data"`
-	Created int    `json:"created"`
-	Color   string `json:"color"`
+	Id      int    `dynamodbav:"id"`
+	Data    string `dynamodbav:"data"`
+	Created int    `dynamodbav:"created"`
+	Color   string `dynamodbav:"color"`
 }
 
 type ErrorResponse struct {
@@ -37,14 +38,13 @@ type ErrorResponse struct {
 }
 
 type Connection struct {
-	ConnectionId string `json:"connectionId"`
-	Created      int    `json:"created"`
-	Color        string `json:"color"`
+	ConnectionId string `dynamodbav:"connectionId"`
+	Created      int    `dynamodbav:"created"`
+	Color        string `dynamodbav:"color"`
 }
 
 type Response events.APIGatewayProxyResponse
 
-var cfg aws.Config
 var apiClient *apigatewaymanagementapi.Client
 var dynamodbClient *dynamodb.Client
 
@@ -55,9 +55,9 @@ func HandleRequest(ctx context.Context, request events.APIGatewayWebsocketProxyR
 	var jsonBytes []byte
 	connectionCount, err := getConnectionCount(ctx)
 	limitCount, _ := strconv.Atoi(os.Getenv("LIMIT_CONNECTION_COUNT"))
-	if err == nil && int(*connectionCount) < limitCount {
+	if err == nil && int(connectionCount) < limitCount {
 		err = putConnection(ctx, request.RequestContext.ConnectionID)
-	} else if int(*connectionCount) >= limitCount {
+	} else if int(connectionCount) >= limitCount {
 		err = errors.New("too many connections")
 	}
 	log.Print(request.RequestContext.Identity.SourceIP)
@@ -79,27 +79,25 @@ func HandleRequest(ctx context.Context, request events.APIGatewayWebsocketProxyR
 	}, nil
 }
 
-func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanOutput, error)  {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(getConfig(ctx))
 	}
 	params := &dynamodb.ScanInput{
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.ScanRequest(params)
-	return req.Send(ctx)
+	return dynamodbClient.Scan(ctx, params)
 }
 
-func put(ctx context.Context, tableName string, av map[string]dynamodb.AttributeValue) error {
+func put(ctx context.Context, tableName string, av map[string]types.AttributeValue) error {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(getConfig(ctx))
 	}
 	input := &dynamodb.PutItemInput{
 		Item:      av,
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.PutItemRequest(input)
-	_, err := req.Send(ctx)
+	_, err := dynamodbClient.PutItem(ctx, input)
 	if err != nil {
 		log.Print(err)
 		return err
@@ -107,12 +105,12 @@ func put(ctx context.Context, tableName string, av map[string]dynamodb.Attribute
 	return nil
 }
 
-func getConnectionCount(ctx context.Context)(*int64, error)  {
+func getConnectionCount(ctx context.Context)(int32, error)  {
 	result, err := scan(ctx, os.Getenv("CONNECTION_TABLE_NAME"))
 	if err != nil {
-		return nil, err
+		return int32(0), err
 	}
-	return result.ScanOutput.ScannedCount, nil
+	return result.ScannedCount, nil
 }
 
 func putConnection(ctx context.Context, connectionId string) error {
@@ -124,7 +122,7 @@ func putConnection(ctx context.Context, connectionId string) error {
 		Created:      t_,
 		Color:        "00" + c[(len(c) - 4):],
 	}
-	av, err := dynamodbattribute.MarshalMap(item)
+	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
 		log.Print(err)
 		return err
@@ -137,13 +135,13 @@ func putConnection(ctx context.Context, connectionId string) error {
 	return nil
 }
 
-func init() {
+func getConfig(ctx context.Context) aws.Config {
 	var err error
-	cfg, err = external.LoadDefaultAWSConfig()
-	cfg.Region = os.Getenv("REGION")
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("REGION")))
 	if err != nil {
 		log.Print(err)
 	}
+	return cfg
 }
 
 func main() {

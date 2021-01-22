@@ -11,10 +11,11 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 )
 
 type ErrorResponse struct {
@@ -22,12 +23,11 @@ type ErrorResponse struct {
 }
 
 type Connection struct {
-	ConnectionId string `json:"connectionId"`
-	Created      int    `json:"created"`
-	Color        string `json:"color"`
+	ConnectionId string `dynamodbav:"connectionId"`
+	Created      int    `dynamodbav:"created"`
+	Color        string `dynamodbav:"color"`
 }
 
-var cfg aws.Config
 var apiClient *apigatewaymanagementapi.Client
 var dynamodbClient *dynamodb.Client
 
@@ -41,28 +41,26 @@ func HandleRequest(ctx context.Context, event events.CloudWatchEvent) error {
 	return nil
 }
 
-func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanOutput, error)  {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(getConfig(ctx))
 	}
 	params := &dynamodb.ScanInput{
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.ScanRequest(params)
-	return req.Send(ctx)
+	return dynamodbClient.Scan(ctx, params)
 }
 
-func delete(ctx context.Context, tableName string, key map[string]dynamodb.AttributeValue) error {
+func delete(ctx context.Context, tableName string, key map[string]types.AttributeValue) error {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(getConfig(ctx))
 	}
 	input := &dynamodb.DeleteItemInput{
 		TableName: aws.String(tableName),
 		Key: key,
 	}
 
-	req := dynamodbClient.DeleteItemRequest(input)
-	_, err := req.Send(ctx)
+	_, err := dynamodbClient.DeleteItem(ctx, input)
 	return err
 }
 
@@ -75,9 +73,9 @@ func checkConnections(ctx context.Context) error {
 		log.Print(err)
 		return err
 	}
-	for _, i := range result.ScanOutput.Items {
+	for _, i := range result.Items {
 		item := Connection{}
-		err := dynamodbattribute.UnmarshalMap(i, &item)
+		err := attributevalue.UnmarshalMap(i, &item)
 		if err != nil {
 			log.Print(err)
 		} else {
@@ -85,14 +83,15 @@ func checkConnections(ctx context.Context) error {
 			if item.Created > old {
 				continue
 			}
-			key := map[string]dynamodb.AttributeValue{
-				"connectionId": {
-					S: aws.String(item.ConnectionId),
-				},
-			}
-			err := delete(ctx, os.Getenv("CONNECTION_TABLE_NAME"), key)
+			item := struct {Token string `dynamodbav:"connectionId"`}{item.ConnectionId}
+			key, err := attributevalue.MarshalMap(item)
 			if err != nil {
 				log.Print(err)
+			} else {
+				err = delete(ctx, os.Getenv("CONNECTION_TABLE_NAME"), key)
+				if err != nil {
+					log.Print(err)
+				}
 			}
 		}
 	}
@@ -102,13 +101,13 @@ func checkConnections(ctx context.Context) error {
 	return nil
 }
 
-func init() {
+func getConfig(ctx context.Context) aws.Config {
 	var err error
-	cfg, err = external.LoadDefaultAWSConfig()
-	cfg.Region = os.Getenv("REGION")
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("REGION")))
 	if err != nil {
 		log.Print(err)
 	}
+	return cfg
 }
 
 func main() {
