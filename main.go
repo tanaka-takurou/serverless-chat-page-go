@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 )
 
 type TemplateData struct {
@@ -29,10 +29,10 @@ type TemplateData struct {
 }
 
 type MessageData struct {
-	Id           int    `json:"id"`
-	Data         string `json:"data"`
-	Created      int    `json:"created"`
-	Color        string `json:"color"`
+	Id           int    `dynamodbav:"id"`
+	Data         string `dynamodbav:"data"`
+	Created      int    `dynamodbav:"created"`
+	Color        string `dynamodbav:"color"`
 }
 
 type LogData struct {
@@ -43,19 +43,9 @@ type LogData struct {
 
 type Response events.APIGatewayProxyResponse
 
-var cfg aws.Config
 var dynamodbClient *dynamodb.Client
 
 const title string = "Simple Chat"
-
-func init() {
-	var err error
-	cfg, err = external.LoadDefaultAWSConfig()
-	cfg.Region = os.Getenv("REGION")
-	if err != nil {
-		log.Print(err)
-	}
-}
 
 func main() {
 	lambda.Start(handler)
@@ -93,15 +83,14 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (Respo
 	return res, nil
 }
 
-func scan(ctx context.Context, tableName string)(*dynamodb.ScanResponse, error)  {
+func scan(ctx context.Context, tableName string)(*dynamodb.ScanOutput, error)  {
 	if dynamodbClient == nil {
-		dynamodbClient = dynamodb.New(cfg)
+		dynamodbClient = dynamodb.NewFromConfig(getConfig(ctx))
 	}
 	params := &dynamodb.ScanInput{
 		TableName: aws.String(tableName),
 	}
-	req := dynamodbClient.ScanRequest(params)
-	return req.Send(ctx)
+	return dynamodbClient.Scan(ctx, params)
 }
 
 func sacnMessageList(ctx context.Context)([]MessageData, error)  {
@@ -111,9 +100,9 @@ func sacnMessageList(ctx context.Context)([]MessageData, error)  {
 		return nil, err
 	}
 	var messageList []MessageData
-	for _, i := range result.ScanOutput.Items {
+	for _, i := range result.Items {
 		item := MessageData{}
-		err := dynamodbattribute.UnmarshalMap(i, &item)
+		err := attributevalue.UnmarshalMap(i, &item)
 		if err != nil {
 			log.Print(err)
 		} else {
@@ -141,4 +130,13 @@ func getLogList(messageList []MessageData) []LogData {
 		})
 	}
 	return logList
+}
+
+func getConfig(ctx context.Context) aws.Config {
+	var err error
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("REGION")))
+	if err != nil {
+		log.Print(err)
+	}
+	return cfg
 }
