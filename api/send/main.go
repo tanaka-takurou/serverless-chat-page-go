@@ -340,18 +340,12 @@ func uploadImage(ctx context.Context, filename string, filedata string)(string, 
 
 func sendMessage(ctx context.Context, request events.APIGatewayWebsocketProxyRequest) error {
 	if apigatewayClient == nil {
-		cp := cfg.Copy()
-		cp.EndpointResolver = aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-			var endpoint url.URL
-			endpoint.Path = request.RequestContext.Stage
-			endpoint.Host = request.RequestContext.DomainName
-			endpoint.Scheme = "https"
-			return aws.Endpoint{
-				SigningRegion: region,
-				URL:           endpoint.String(),
-			}, nil
-		})
-		apigatewayClient = apigatewaymanagementapi.NewFromConfig(cp)
+		var endpoint url.URL
+		endpoint.Scheme = "https"
+		endpoint.Path = request.RequestContext.Stage
+		endpoint.Host = request.RequestContext.DomainName
+		endpointResolver := apigatewaymanagementapi.EndpointResolverFromURL(endpoint.String())
+		apigatewayClient = apigatewaymanagementapi.NewFromConfig(cfg, apigatewaymanagementapi.WithEndpointResolver(endpointResolver))
 	}
 	var d PostData
 	var err error

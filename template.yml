@@ -39,6 +39,9 @@ Parameters:
   LimitMessageCount:
     Type: String
     Default: '100'
+  ApiStageName:
+    Type: String
+    Default: 'prod'
 
 Metadata:
   AWS::ServerlessRepo::Application:
@@ -50,7 +53,7 @@ Metadata:
     ReadmeUrl: README.md
     Labels: ['ServerlessRepo']
     HomePageUrl: https://github.com/tanaka-takurou/serverless-chat-page-go/
-    SemanticVersion: 0.0.2
+    SemanticVersion: 0.0.3
     SourceCodeUrl: https://github.com/tanaka-takurou/serverless-chat-page-go/
 
 Resources:
@@ -131,7 +134,7 @@ Resources:
   Stage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
-      StageName: Prod
+      StageName: !Ref ApiStageName
       Description: Prod Stage
       DeploymentId: !Ref Deployment
       ApiId: !Ref ServerlessChatWebSocket
@@ -278,7 +281,7 @@ Resources:
           BUCKET_NAME: !Ref ImgBucket
           MESSAGE_TABLE_NAME: !Ref MessageTableName
           LIMIT_MESSAGE_COUNT: !Ref LimitMessageCount
-          WEBSOCKET_URL: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/Prod'] ]
+          WEBSOCKET_URL: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref ApiStageName] ]
           REGION: !Ref 'AWS::Region'
       Policies:
       - DynamoDBCrudPolicy:
@@ -326,7 +329,7 @@ Resources:
 Outputs:
   WebSocketURI:
     Description: "The WSS Protocol URI to connect to"
-    Value: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/Prod'] ]
+    Value: !Join [ '', [ 'wss://', !Ref ServerlessChatWebSocket, '.execute-api.',!Ref 'AWS::Region','.amazonaws.com/',!Ref ApiStageName] ]
 
   FrontPageURI:
     Description: "The Front Page URI to connect to"
