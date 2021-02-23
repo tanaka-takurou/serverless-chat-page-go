@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"bytes"
+	"embed"
 	"context"
 	"strconv"
 	"strings"
@@ -43,6 +44,8 @@ type LogData struct {
 
 type Response events.APIGatewayProxyResponse
 
+//go:embed templates
+var templateFS embed.FS
 var dynamodbClient *dynamodb.Client
 
 const title string = "Simple Chat"
@@ -58,7 +61,7 @@ func handler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (Respo
 	}
 	buf := new(bytes.Buffer)
 	fw := io.Writer(buf)
-	tmp := template.Must(template.New("tmp").Funcs(fnc).ParseFiles("templates/index.html", "templates/view.html", "templates/header.html"))
+	tmp := template.Must(template.New("tmp").Funcs(fnc).ParseFS(templateFS, "templates/index.html", "templates/view.html", "templates/header.html"))
 	dat.Title = title
 	dat.Url = os.Getenv("WEBSOCKET_URL")
 	dat.Max, _ = strconv.Atoi(os.Getenv("LIMIT_MESSAGE_COUNT"))
