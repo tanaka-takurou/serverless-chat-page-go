@@ -173,11 +173,13 @@ Resources:
   OnConnectFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: !Ref ChatOnConnectFunctionName
       CodeUri: api/connect/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'Chat OnConnect Function'
       Environment:
         Variables:
@@ -199,11 +201,13 @@ Resources:
   OnDisconnectFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: !Ref ChatOnDisconnectFunctionName
       CodeUri: api/disconnect/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'Chat OnDisconnect Function'
       Environment:
         Variables:
@@ -223,11 +227,13 @@ Resources:
   OnSendFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: !Ref ChatOnSendFunctionName
       CodeUri: api/send/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'Chat OnSendFunction Function'
       Environment:
         Variables:
@@ -263,11 +269,13 @@ Resources:
   FrontPageFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: !Ref ChatFrontFunctionName
       CodeUri: bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'Chat Front Function'
       Events:
         testapi:
@@ -295,11 +303,13 @@ Resources:
   CronFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Architectures:
+      - arm64
       FunctionName: !Ref ChatCronFunctionName
       CodeUri: api/cron/bin/
-      Handler: main
+      Handler: bootstrap
       MemorySize: 256
-      Runtime: go1.x
+      Runtime: provided.al2
       Description: 'Chat Cron Function'
       Environment:
         Variables:
